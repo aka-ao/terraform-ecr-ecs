@@ -17,6 +17,129 @@ output "ecr_url" {
   value = aws_ecr_repository.nginx.repository_url
 }
 
+data "aws_iam_policy_document" "assume_role_codebuild" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["codebuild.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "codebuild_execution_role" {
+  name               = "MyCodeBuildRole"
+  assume_role_policy = data.aws_iam_policy_document.assume_role_codebuild.json
+}
+
+resource "aws_codebuild_project" "my_nginx" {
+  name = "my_nginx"
+  service_role = aws_iam_role.codebuild_execution_role.arn
+  artifacts {
+    type = "NO_ARTIFACTS"
+  }
+  environment {
+    compute_type = "BUILD_GENERAL1_SMALL"
+    image = "aws/codebuild/amazonlinux2-x86_64-standard:2.0"
+    type = "LINUX_CONTAINER"
+    privileged_mode = true
+
+    environment_variable {
+      name = "AWS_ACCOUNT_ID"
+      value = "181804339651"
+      type = "PLAINTEXT"
+    }
+    environment_variable {
+      name = "AWS_DEFAULT_REGION"
+      value = "ap-northeast-1"
+      type = "PLAINTEXT"
+    }
+    environment_variable {
+      name = "IMAGE_REPO_NAME"
+      value = "my-nginx"
+      type = "PLAINTEXT"
+    }
+    environment_variable {
+      name = "IMAGE_TAG"
+      value = "latest"
+      type = "PLAINTEXT"
+    }
+  }
+  source {
+    type = "GITHUB"
+    location = "https://github.com/akapo001/terraform-ecr-ecs.git"
+    git_clone_depth = 1
+    git_submodules_config {
+      fetch_submodules = true
+    }
+  }
+  source_version = "main"
+}
+
+resource "aws_iam_role_policy_attachment" "amazon_ec2_container_registry_full_access" {
+  role       = aws_iam_role.codebuild_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "amazon_ec2_container_registry_power_user" {
+  role       = aws_iam_role.codebuild_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
+}
+
+resource "aws_iam_policy" "codebuild_base_policy" {
+  name = "CodeBuildBasePolicy-my_nginx"
+  policy = jsonencode({
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Effect: "Allow",
+        Resource: [
+          "arn:aws:logs:ap-northeast-1:181804339651:log-group:/aws/codebuild/my_nginx",
+          "arn:aws:logs:ap-northeast-1:181804339651:log-group:/aws/codebuild/my_nginx:*"
+        ],
+        Action: [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+      },
+      {
+        Effect: "Allow",
+        Resource: [
+          "arn:aws:s3:::codepipeline-ap-northeast-1-*"
+        ],
+        Action: [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:GetBucketAcl",
+          "s3:GetBucketLocation"
+        ]
+      },
+      {
+        Effect: "Allow",
+        Action: [
+          "codebuild:CreateReportGroup",
+          "codebuild:CreateReport",
+          "codebuild:UpdateReport",
+          "codebuild:BatchPutTestCases",
+          "codebuild:BatchPutCodeCoverages"
+        ],
+        Resource: [
+          "arn:aws:codebuild:ap-northeast-1:181804339651:report-group/my_nginx-*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "codebuild_policy" {
+  role       = aws_iam_role.codebuild_execution_role.name
+
+  policy_arn = aws_iam_policy.codebuild_base_policy.arn
+}
+
 data "aws_iam_policy_document" "assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
