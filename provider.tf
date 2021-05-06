@@ -29,11 +29,13 @@ data "aws_iam_policy_document" "assume_role_codebuild" {
 }
 
 resource "aws_iam_role" "codebuild_execution_role" {
+  depends_on = [data.aws_iam_policy_document.assume_role_codebuild]
   name               = "MyCodeBuildRole"
   assume_role_policy = data.aws_iam_policy_document.assume_role_codebuild.json
 }
 
 resource "aws_codebuild_project" "my_nginx" {
+  depends_on = [aws_iam_role_policy_attachment.codebuild_policy, aws_ecr_repository.nginx]
   name = "my_nginx"
   service_role = aws_iam_role.codebuild_execution_role.arn
   artifacts {
@@ -47,7 +49,7 @@ resource "aws_codebuild_project" "my_nginx" {
 
     environment_variable {
       name = "AWS_ACCOUNT_ID"
-      value = "181804339651"
+      value = var.aws_account_id
       type = "PLAINTEXT"
     }
     environment_variable {
@@ -95,8 +97,8 @@ resource "aws_iam_policy" "codebuild_base_policy" {
       {
         Effect: "Allow",
         Resource: [
-          "arn:aws:logs:ap-northeast-1:181804339651:log-group:/aws/codebuild/my_nginx",
-          "arn:aws:logs:ap-northeast-1:181804339651:log-group:/aws/codebuild/my_nginx:*"
+          "arn:aws:logs:ap-northeast-1:${var.aws_account_id}:log-group:/aws/codebuild/my_nginx",
+          "arn:aws:logs:ap-northeast-1:${var.aws_account_id}:log-group:/aws/codebuild/my_nginx:*"
         ],
         Action: [
           "logs:CreateLogGroup",
@@ -127,7 +129,7 @@ resource "aws_iam_policy" "codebuild_base_policy" {
           "codebuild:BatchPutCodeCoverages"
         ],
         Resource: [
-          "arn:aws:codebuild:ap-northeast-1:181804339651:report-group/my_nginx-*"
+          "arn:aws:codebuild:ap-northeast-1:${var.aws_account_id}:report-group/my_nginx-*"
         ]
       }
     ]
